@@ -16,6 +16,7 @@ pub struct VideoInfo {
     pub channel: Option<String>,
     pub duration: Option<serde_json::Value>,
     pub thumbnail: Option<String>,
+    pub formats: Vec<u32>,
 }
 
 #[derive(Serialize, Clone)]

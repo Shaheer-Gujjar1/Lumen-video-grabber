@@ -60,6 +60,14 @@ interface ProgressPayload {
   filepath?: string;
 }
 
+interface RecentSearchItem {
+  title: string;
+  thumbnail: string;
+  url: string;
+  duration: string;
+  timestamp: string;
+}
+
 const Index = () => {
   const [url, setUrl] = useState("");
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
@@ -72,7 +80,7 @@ const Index = () => {
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [defaultPath, setDefaultPath] = useState<string>("");
   const [activeTab, setActiveTab] = useState("search");
-  const [recentSearches, setRecentSearches] = useState<any[]>([]);
+  const [recentSearches, setRecentSearches] = useState<RecentSearchItem[]>([]);
   const [showRecent, setShowRecent] = useState(false);
 
   // Custom Modal States
@@ -93,7 +101,7 @@ const Index = () => {
     }
   };
 
-  const getRecentSearchesFromStorage = (): any[] => {
+  const getRecentSearchesFromStorage = (): RecentSearchItem[] => {
     try {
       const data = localStorage.getItem("lumen_grabber_recent");
       return data ? JSON.parse(data) : [];
@@ -102,7 +110,7 @@ const Index = () => {
     }
   };
 
-  const saveRecentSearchesToStorage = (items: any[]) => {
+  const saveRecentSearchesToStorage = (items: RecentSearchItem[]) => {
     localStorage.setItem("lumen_grabber_recent", JSON.stringify(items));
   };
 
@@ -206,7 +214,14 @@ const Index = () => {
     setVideoInfo(null);
     setShowRecent(false);
     try {
-      const info = await invoke<any>("fetch_video_info", { url: trimmedUrl });
+      const info = await invoke<{
+        id?: string;
+        title?: string;
+        channel?: string;
+        duration?: string | number;
+        thumbnail?: string;
+        formats?: number[];
+      }>("fetch_video_info", { url: trimmedUrl });
       setLoading(false);
       if (info) {
         const videoData: VideoInfo = {
@@ -238,8 +253,8 @@ const Index = () => {
         saveRecentSearchesToStorage(recent);
         setRecentSearches(recent);
       }
-    } catch (err: any) {
-      toast.error(err.toString() || "Failed to extract video information.");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : String(err) || "Failed to extract video information.");
     }
     setLoading(false);
   }, [url]);
@@ -266,7 +281,7 @@ const Index = () => {
 
     if (!forceDuplicate) {
       try {
-        const fileCheck = await invoke<any>("check_file_exists", {
+        const fileCheck = await invoke<{ exists: boolean; path?: string }>("check_file_exists", {
           folder: defaultPath,
           filename: videoInfo.title
         });
@@ -313,8 +328,8 @@ const Index = () => {
         return updated;
       });
       toast.success("Download started!", { description: videoInfo.title });
-    } catch (err: any) {
-      toast.error("Download Error", { description: err.toString() });
+    } catch (err: unknown) {
+      toast.error("Download Error", { description: err instanceof Error ? err.message : String(err) });
     } finally {
       setDownloading(false);
       setDownloadStatus("");
@@ -349,8 +364,8 @@ const Index = () => {
         downloadId: dl.id,
         allowDuplicate: dl.forceDuplicate || false
       });
-    } catch (e: any) {
-      toast.error("Failed to resume", { description: e.toString() });
+    } catch (e: unknown) {
+      toast.error("Failed to resume", { description: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -394,13 +409,14 @@ const Index = () => {
       setLoading(true);
       try {
         const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${id}`);
-        const data = await res.json();
+        const data = await res.json() as { title?: string; author_name?: string; thumbnail_url?: string };
         setVideoInfo({
           id,
           title: data.title || "YouTube Video",
           channel: data.author_name || "Unknown Channel",
           duration: "--:--",
           thumbnail: data.thumbnail_url || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+          formats: [],
         });
       } catch {
         setVideoInfo({
@@ -409,6 +425,7 @@ const Index = () => {
           channel: "Unknown Channel",
           duration: "--:--",
           thumbnail: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+          formats: [],
         });
       }
       setLoading(false);
