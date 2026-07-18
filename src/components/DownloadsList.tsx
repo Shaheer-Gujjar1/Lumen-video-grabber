@@ -86,21 +86,21 @@ const DownloadsList = ({ downloads, onDelete, onRedownload, onPause, onResume, o
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-primary/20 border border-primary/20">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
                       <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
-                        {dl.speed}{dl.total_size ? ` / ${dl.total_size}` : ''}
+                        {dl.speed}
                       </span>
                     </div>
                   ) : dl.status === 'completed' ? (
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                       <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">
-                        Saved {dl.total_size ? `(${dl.total_size})` : ''}
+                        Saved
                       </span>
                     </div>
                   ) : dl.status === 'paused' ? (
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20">
                       <Pause className="w-3.5 h-3.5 text-amber-500" />
                       <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">
-                        Paused {dl.total_size ? `(${dl.total_size})` : ''}
+                        Paused
                       </span>
                     </div>
                   ) : (
@@ -187,13 +187,12 @@ const DownloadsList = ({ downloads, onDelete, onRedownload, onPause, onResume, o
                   <span className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">
                     {(() => {
                       if (!dl.total_size) return dl.speed;
-                      // Parse total_size (e.g. 50.00MiB or 10.5MB)
                       const totalClean = dl.total_size.replace(/[^\d.]/g, "");
                       const unit = dl.total_size.replace(/[\d.]/g, "").trim();
                       const totalNum = parseFloat(totalClean);
-                      if (isNaN(totalNum)) return `${dl.speed} | ${dl.total_size}`;
+                      if (isNaN(totalNum)) return dl.total_size;
                       const downloaded = (totalNum * (dl.percent / 100)).toFixed(2);
-                      return `${downloaded}${unit} / ${dl.total_size} (${dl.speed})`;
+                      return `${downloaded}${unit} / ${dl.total_size}`;
                     })()}
                   </span>
                   <span className="text-xs font-mono text-primary font-bold">{Math.round(dl.percent)}%</span>
