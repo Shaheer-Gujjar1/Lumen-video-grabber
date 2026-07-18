@@ -1,4 +1,0 @@
-project_id = "debgkojgappmbxuymxnf"
-
-[functions.download]
-verify_jwt = false
