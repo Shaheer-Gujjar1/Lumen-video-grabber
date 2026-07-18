@@ -3,6 +3,8 @@ import { useEffect } from "react";
 import { Download, CheckCircle2, XCircle, FolderOpen, Trash2, RefreshCw, FileVideo, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+import { invoke } from "@tauri-apps/api/core";
+
 interface DownloadItem {
   id: string;
   title: string;
@@ -25,11 +27,11 @@ interface DownloadsListProps {
 }
 
 const DownloadsList = ({ downloads, onDelete, onRedownload, onPause, onResume, onFetchThumbnail }: DownloadsListProps) => {
-  const handleOpenFolder = (path: string) => {
-    // @ts-ignore
-    if (window.pywebview && window.pywebview.api) {
-      // @ts-ignore
-      window.pywebview.api.open_file_location(path);
+  const handleOpenFolder = async (path: string) => {
+    try {
+      await invoke("open_file_location", { path });
+    } catch (e) {
+      console.error("Failed to open file location:", e);
     }
   };
 
