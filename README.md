@@ -1,8 +1,6 @@
-# Lumen Lab Video Grabber
+# Lumen Video Grabber
 
 A premium, high-performance desktop media acquisition engine built with **React**, **Python**, and **yt-dlp**.
-
-![Lumen Lab Logo](public/Lumen-Lab-Logo-BG-Removed.png)
 
 > ⚠️ **Linux & Windows Support**
 >
