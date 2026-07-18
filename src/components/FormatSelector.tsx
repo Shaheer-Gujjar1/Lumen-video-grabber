@@ -10,9 +10,10 @@ interface FormatSelectorProps {
   onQualityChange: (q: string) => void;
   includeAudio: boolean;
   onIncludeAudioChange: (v: boolean) => void;
+  availableHeights?: number[];
 }
 
-const videoQualities = [
+const defaultVideoQualities = [
   { value: "2160", label: "4K", desc: "2160p • Best quality" },
   { value: "1080", label: "1080p", desc: "Full HD" },
   { value: "720", label: "720p", desc: "HD" },
@@ -35,7 +36,19 @@ const FormatSelector = ({
   onQualityChange,
   includeAudio,
   onIncludeAudioChange,
+  availableHeights,
 }: FormatSelectorProps) => {
+  const videoQualities = availableHeights && availableHeights.length > 0
+    ? availableHeights.map(h => {
+        let label = `${h}p`;
+        if (h === 2160) label = "4K (2160p)";
+        if (h === 1440) label = "2K (1440p)";
+        if (h === 1080) label = "1080p (Full HD)";
+        if (h === 720) label = "720p (HD)";
+        return { value: h.toString(), label, desc: `Acquire in ${h}p` };
+      })
+    : defaultVideoQualities;
+
   const qualities = mode === "audio" ? audioQualities : videoQualities;
 
   return (

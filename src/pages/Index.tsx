@@ -36,6 +36,7 @@ interface VideoInfo {
   channel: string;
   duration: string;
   thumbnail: string;
+  formats: number[];
 }
 
 interface DownloadItem {
@@ -208,14 +209,19 @@ const Index = () => {
       const info = await invoke<any>("fetch_video_info", { url: trimmedUrl });
       setLoading(false);
       if (info) {
-        const videoData = {
+        const videoData: VideoInfo = {
           id: info.id || "",
           title: info.title || "Unknown Title",
           channel: info.channel || "Unknown Channel",
           duration: typeof info.duration === "string" ? info.duration : "--:--",
           thumbnail: info.thumbnail || "",
+          formats: info.formats || [],
         };
         setVideoInfo(videoData);
+        if (videoData.formats && videoData.formats.length > 0) {
+          // Set to highest available resolution
+          setQuality(videoData.formats[0].toString());
+        }
         if (targetUrl) setUrl(targetUrl);
 
         // Save to recent searches
@@ -558,6 +564,7 @@ const Index = () => {
                   onQualityChange={setQuality}
                   includeAudio={includeAudio}
                   onIncludeAudioChange={setIncludeAudio}
+                  availableHeights={videoInfo.formats}
                 />
 
                 <Button

@@ -79,12 +79,27 @@ pub async fn fetch_video_info(url: String) -> Result<VideoInfo, String> {
 
     let thumbnail = json_val.get("thumbnail").and_then(|v| v.as_str()).map(String::from);
 
+    // Extract available video heights
+    let mut formats = Vec::new();
+    if let Some(formats_arr) = json_val.get("formats").and_then(|f| f.as_array()) {
+        for f in formats_arr {
+            if let Some(height) = f.get("height").and_then(|h| h.as_u64()) {
+                let height_u32 = height as u32;
+                if height_u32 > 0 && !formats.contains(&height_u32) {
+                    formats.push(height_u32);
+                }
+            }
+        }
+    }
+    formats.sort_by(|a, b| b.cmp(a)); // Sort descending (e.g. 2160, 1080, 720...)
+
     Ok(VideoInfo {
         id,
         title,
         channel,
         duration,
         thumbnail,
+        formats,
     })
 }
 
