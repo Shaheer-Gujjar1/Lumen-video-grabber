@@ -57,6 +57,8 @@ interface DownloadItem {
   error?: string;
   forceDuplicate?: boolean;
   total_size?: string;
+  mode: string;
+  quality: string;
 }
 
 interface ProgressPayload {
@@ -123,6 +125,12 @@ const Index = () => {
   };
 
   useEffect(() => {
+    // Disable right click (context menu) inside web view
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("contextmenu", handleContextMenu);
+
     // Setup Tauri progress listener
     const unlistenProgress = listen<ProgressPayload>("download-progress", (event) => {
       const { download_id, percent, speed, filepath, total_size } = event.payload;
@@ -197,7 +205,7 @@ const Index = () => {
 
       const history = getHistoryFromStorage();
       const cleanedHistory = history.map(h => 
-        h.status === 'downloading' ? { ...h, status: 'error' as const, error: 'Interrupted' } : h
+        h.status === 'downloading' ? { ...h, status: 'paused' as const, speed: 'Interrupted' } : h
       );
       setDownloads(cleanedHistory);
       setRecentSearches(getRecentSearchesFromStorage());
@@ -206,6 +214,7 @@ const Index = () => {
     initApp();
 
     return () => {
+      window.removeEventListener("contextmenu", handleContextMenu);
       unlistenProgress.then(f => f());
       unlistenError.then(f => f());
     };
@@ -328,7 +337,9 @@ const Index = () => {
         path: `${defaultPath}/${videoInfo.title}`,
         url: url.trim(),
         thumbnail: videoInfo.thumbnail,
-        forceDuplicate: forceDuplicate
+        forceDuplicate: forceDuplicate,
+        mode,
+        quality,
       };
       
       setDownloads(prev => {
@@ -368,8 +379,8 @@ const Index = () => {
       await invoke("download_video", {
         url: dl.url,
         downloadPath: defaultPath,
-        mode,
-        quality,
+        mode: dl.mode,
+        quality: dl.quality,
         downloadId: dl.id,
         allowDuplicate: dl.forceDuplicate || false
       });

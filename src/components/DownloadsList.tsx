@@ -184,7 +184,18 @@ const DownloadsList = ({ downloads, onDelete, onRedownload, onPause, onResume, o
                     </div>
                 </div>
                 <div className="flex justify-between items-center px-1">
-                  <span className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">{dl.speed}</span>
+                  <span className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">
+                    {(() => {
+                      if (!dl.total_size) return dl.speed;
+                      // Parse total_size (e.g. 50.00MiB or 10.5MB)
+                      const totalClean = dl.total_size.replace(/[^\d.]/g, "");
+                      const unit = dl.total_size.replace(/[\d.]/g, "").trim();
+                      const totalNum = parseFloat(totalClean);
+                      if (isNaN(totalNum)) return `${dl.speed} | ${dl.total_size}`;
+                      const downloaded = (totalNum * (dl.percent / 100)).toFixed(2);
+                      return `${downloaded}${unit} / ${dl.total_size} (${dl.speed})`;
+                    })()}
+                  </span>
                   <span className="text-xs font-mono text-primary font-bold">{Math.round(dl.percent)}%</span>
                 </div>
               </div>
