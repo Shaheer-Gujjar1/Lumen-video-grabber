@@ -15,6 +15,7 @@ interface DownloadItem {
   url: string;
   thumbnail?: string;
   error?: string;
+  total_size?: string;
 }
 
 interface DownloadsListProps {
@@ -84,17 +85,23 @@ const DownloadsList = ({ downloads, onDelete, onRedownload, onPause, onResume, o
                   {dl.status === 'downloading' ? (
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-primary/20 border border-primary/20">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                      <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{dl.speed}</span>
+                      <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
+                        {dl.speed}{dl.total_size ? ` / ${dl.total_size}` : ''}
+                      </span>
                     </div>
                   ) : dl.status === 'completed' ? (
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                      <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Saved</span>
+                      <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">
+                        Saved {dl.total_size ? `(${dl.total_size})` : ''}
+                      </span>
                     </div>
                   ) : dl.status === 'paused' ? (
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20">
                       <Pause className="w-3.5 h-3.5 text-amber-500" />
-                      <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Paused</span>
+                      <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">
+                        Paused {dl.total_size ? `(${dl.total_size})` : ''}
+                      </span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-destructive/10 border border-destructive/20">

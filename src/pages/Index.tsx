@@ -30,13 +30,19 @@ function extractVideoId(url: string | undefined | null): string | null {
   return null;
 }
 
+interface FormatItem {
+  height: number;
+  filesize: number | null;
+  label: string;
+}
+
 interface VideoInfo {
   id: string;
   title: string;
   channel: string;
   duration: string;
   thumbnail: string;
-  formats: number[];
+  formats: FormatItem[];
 }
 
 interface DownloadItem {
@@ -50,6 +56,7 @@ interface DownloadItem {
   thumbnail?: string;
   error?: string;
   forceDuplicate?: boolean;
+  total_size?: string;
 }
 
 interface ProgressPayload {
@@ -58,6 +65,7 @@ interface ProgressPayload {
   speed: string;
   eta: number;
   filepath?: string;
+  total_size?: string;
 }
 
 interface RecentSearchItem {
@@ -117,7 +125,7 @@ const Index = () => {
   useEffect(() => {
     // Setup Tauri progress listener
     const unlistenProgress = listen<ProgressPayload>("download-progress", (event) => {
-      const { download_id, percent, speed, filepath } = event.payload;
+      const { download_id, percent, speed, filepath, total_size } = event.payload;
       setDownloads(prev => {
         const updated = prev.map(dl => 
           dl.id === download_id 
@@ -126,7 +134,8 @@ const Index = () => {
                 percent, 
                 speed, 
                 status: (percent === 100 ? 'completed' : 'downloading') as 'completed' | 'downloading',
-                path: filepath || dl.path 
+                path: filepath || dl.path,
+                total_size: total_size || dl.total_size
               } 
             : dl
         );
@@ -220,7 +229,7 @@ const Index = () => {
         channel?: string;
         duration?: string | number;
         thumbnail?: string;
-        formats?: number[];
+        formats?: FormatItem[];
       }>("fetch_video_info", { url: trimmedUrl });
       setLoading(false);
       if (info) {
@@ -235,7 +244,7 @@ const Index = () => {
         setVideoInfo(videoData);
         if (videoData.formats && videoData.formats.length > 0) {
           // Set to highest available resolution
-          setQuality(videoData.formats[0].toString());
+          setQuality(videoData.formats[0].height.toString());
         }
         if (targetUrl) setUrl(targetUrl);
 
@@ -581,7 +590,7 @@ const Index = () => {
                   onQualityChange={setQuality}
                   includeAudio={includeAudio}
                   onIncludeAudioChange={setIncludeAudio}
-                  availableHeights={videoInfo.formats}
+                  availableFormats={videoInfo.formats}
                 />
 
                 <Button

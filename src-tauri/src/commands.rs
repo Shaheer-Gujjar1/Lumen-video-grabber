@@ -10,13 +10,20 @@ lazy_static::lazy_static! {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct FormatItem {
+    pub height: u32,
+    pub filesize: Option<u64>,
+    pub label: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VideoInfo {
     pub id: Option<String>,
     pub title: Option<String>,
     pub channel: Option<String>,
     pub duration: Option<serde_json::Value>,
     pub thumbnail: Option<String>,
-    pub formats: Vec<u32>,
+    pub formats: Vec<FormatItem>,
 }
 
 #[derive(Serialize, Clone)]
@@ -26,6 +33,7 @@ pub struct ProgressPayload {
     pub speed: String,
     pub eta: i64,
     pub filepath: Option<String>,
+    pub total_size: Option<String>,
 }
 
 #[tauri::command]
@@ -80,19 +88,41 @@ pub async fn fetch_video_info(url: String) -> Result<VideoInfo, String> {
 
     let thumbnail = json_val.get("thumbnail").and_then(|v| v.as_str()).map(String::from);
 
-    // Extract available video heights
+    // Extract available video heights and map to FormatItem
     let mut formats = Vec::new();
     if let Some(formats_arr) = json_val.get("formats").and_then(|f| f.as_array()) {
         for f in formats_arr {
             if let Some(height) = f.get("height").and_then(|h| h.as_u64()) {
                 let height_u32 = height as u32;
-                if height_u32 > 0 && !formats.contains(&height_u32) {
-                    formats.push(height_u32);
+                if height_u32 > 0 && !formats.iter().any(|item: &FormatItem| item.height == height_u32) {
+                    let filesize = f.get("filesize")
+                        .or_else(|| f.get("filesize_approx"))
+                        .and_then(|v| v.as_u64());
+
+                    let size_label = match filesize {
+                        Some(size) => {
+                            let mb = size as f64 / (1024.0 * 1024.0);
+                            format!(" ({:.1} MB)", mb)
+                        }
+                        None => "".to_string(),
+                    };
+
+                    let mut label = format!("{}p{}", height_u32, size_label);
+                    if height_u32 == 2160 { label = format!("4K (2160p){}", size_label); }
+                    if height_u32 == 1440 { label = format!("2K (1440p){}", size_label); }
+                    if height_u32 == 1080 { label = format!("1080p (Full HD){}", size_label); }
+                    if height_u32 == 720 { label = format!("720p (HD){}", size_label); }
+
+                    formats.push(FormatItem {
+                        height: height_u32,
+                        filesize,
+                        label,
+                    });
                 }
             }
         }
     }
-    formats.sort_by(|a, b| b.cmp(a)); // Sort descending (e.g. 2160, 1080, 720...)
+    formats.sort_by(|a, b| b.height.cmp(&a.height)); // Sort descending by resolution height
 
     Ok(VideoInfo {
         id,
@@ -115,7 +145,6 @@ pub fn pause_download(download_id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn open_file_location(path: String) -> Result<(), String> {
     let p = Path::new(&path);
-    let folder = if p.is_dir() { p } else { p.parent().unwrap_or(Path::new(".")) };
     
     #[cfg(target_os = "windows")]
     {
@@ -126,6 +155,7 @@ pub fn open_file_location(path: String) -> Result<(), String> {
                 .spawn()
                 .map_err(|e| e.to_string())?;
         } else {
+            let folder = p.parent().unwrap_or(Path::new("."));
             Command::new("explorer")
                 .arg(folder.to_string_lossy().to_string())
                 .spawn()
@@ -135,18 +165,62 @@ pub fn open_file_location(path: String) -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
-            .arg(folder.to_string_lossy().to_string())
-            .spawn()
-            .map_err(|e| e.to_string())?;
+        if p.exists() && !p.is_dir() {
+            Command::new("open")
+                .arg("-R")
+                .arg(p.to_string_lossy().to_string())
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        } else {
+            let folder = p.parent().unwrap_or(Path::new("."));
+            Command::new("open")
+                .arg(folder.to_string_lossy().to_string())
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
     }
 
     #[cfg(target_os = "linux")]
     {
-        Command::new("xdg-open")
-            .arg(folder.to_string_lossy().to_string())
-            .spawn()
-            .map_err(|e| e.to_string())?;
+        if p.exists() && !p.is_dir() {
+            // Try dbus-send first to select file across desktop managers, fallback to folder open if it fails
+            let dbus_result = Command::new("dbus-send")
+                .args([
+                    "--session",
+                    "--print-reply",
+                    "--dest=org.freedesktop.FileManager1",
+                    "/org/freedesktop/FileManager1",
+                    "org.freedesktop.FileManager1.ShowItems",
+                    &format!("array:string:file://{}", p.canonicalize().unwrap_or_else(|_| p.to_path_buf()).to_string_lossy()),
+                    "string:\"\""
+                ])
+                .output();
+
+            if dbus_result.is_err() || !dbus_result.unwrap().status.success() {
+                // Fallback to file manager specific highlight flags
+                let folder = p.parent().unwrap_or(Path::new("."));
+                
+                // Attempt to run nautilus select (most common in debian/ubuntu)
+                let nautilus = Command::new("nautilus")
+                    .arg("-s")
+                    .arg(p.to_string_lossy().to_string())
+                    .spawn();
+
+                if nautilus.is_err() {
+                    // Fall back to general folder open
+                    Command::new("xdg-open")
+                        .arg(folder.to_string_lossy().to_string())
+                        .spawn()
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        } else {
+            let folder = p.parent().unwrap_or(Path::new("."));
+            Command::new("xdg-open")
+                .arg(folder.to_string_lossy().to_string())
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
     }
 
     Ok(())
@@ -256,6 +330,9 @@ pub async fn download_video(
         let reader = std::io::BufReader::new(stdout);
         use std::io::BufRead;
 
+        // Track the filename printed by yt-dlp to emit the exact file path
+        let mut final_filepath = None;
+
         for line in reader.lines().map_while(Result::ok) {
             // Check abort flag
             if let Ok(flags) = ABORT_FLAGS.lock() {
@@ -267,8 +344,27 @@ pub async fn download_video(
                         speed: "Paused".to_string(),
                         eta: 0,
                         filepath: None,
+                        total_size: None,
                     });
                     return;
+                }
+            }
+
+            // Detect destination file path outputted by yt-dlp
+            // Example: [download] Destination: /path/to/downloads/VideoTitle.mp4
+            // Or: [Merger] Merging formats into "/path/to/downloads/VideoTitle.mp4"
+            if line.contains("[download] Destination:") {
+                if let Some(dest) = line.split("Destination: ").nth(1) {
+                    final_filepath = Some(dest.trim().to_string());
+                }
+            } else if line.contains("[Merger] Merging formats into") {
+                if let Some(dest) = line.split("into \"").nth(1) {
+                    let path_clean = dest.replace("\"", "");
+                    final_filepath = Some(path_clean.trim().to_string());
+                }
+            } else if line.contains("[ExtractAudio] Destination:") {
+                if let Some(dest) = line.split("Destination: ").nth(1) {
+                    final_filepath = Some(dest.trim().to_string());
                 }
             }
 
@@ -280,11 +376,16 @@ pub async fn download_video(
                 let mut speed = "0 MB/s".to_string();
                 let mut eta = 0;
 
+                let mut total_size = None;
+
                 for (i, part) in parts.iter().enumerate() {
                     if part.contains("%") {
                         if let Ok(val) = part.replace("%", "").parse::<f64>() {
                             percent = val;
                         }
+                    }
+                    if *part == "of" && i + 1 < parts.len() {
+                        total_size = Some(parts[i+1].to_string());
                     }
                     if *part == "at" && i + 1 < parts.len() {
                         speed = parts[i+1].to_string();
@@ -310,7 +411,8 @@ pub async fn download_video(
                     percent,
                     speed,
                     eta,
-                    filepath: None,
+                    filepath: final_filepath.clone(),
+                    total_size,
                 });
             }
         }
@@ -322,7 +424,8 @@ pub async fn download_video(
                 percent: 100.0,
                 speed: "0 MB/s".to_string(),
                 eta: 0,
-                filepath: Some(format!("{}/completed_file", download_path)),
+                filepath: final_filepath,
+                total_size: None,
             });
         } else {
             let _ = app_clone.emit("download-error", (download_id_clone, "Download failed or interrupted".to_string()));

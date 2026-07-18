@@ -3,6 +3,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 
+interface FormatItem {
+  height: number;
+  filesize: number | null;
+  label: string;
+}
+
 interface FormatSelectorProps {
   mode: string;
   onModeChange: (mode: string) => void;
@@ -10,7 +16,7 @@ interface FormatSelectorProps {
   onQualityChange: (q: string) => void;
   includeAudio: boolean;
   onIncludeAudioChange: (v: boolean) => void;
-  availableHeights?: number[];
+  availableFormats?: FormatItem[];
 }
 
 const defaultVideoQualities = [
@@ -36,16 +42,11 @@ const FormatSelector = ({
   onQualityChange,
   includeAudio,
   onIncludeAudioChange,
-  availableHeights,
+  availableFormats,
 }: FormatSelectorProps) => {
-  const videoQualities = availableHeights && availableHeights.length > 0
-    ? availableHeights.map(h => {
-        let label = `${h}p`;
-        if (h === 2160) label = "4K (2160p)";
-        if (h === 1440) label = "2K (1440p)";
-        if (h === 1080) label = "1080p (Full HD)";
-        if (h === 720) label = "720p (HD)";
-        return { value: h.toString(), label, desc: `Acquire in ${h}p` };
+  const videoQualities = availableFormats && availableFormats.length > 0
+    ? availableFormats.map(f => {
+        return { value: f.height.toString(), label: f.label, desc: `Acquire in ${f.height}p` };
       })
     : defaultVideoQualities;
 
