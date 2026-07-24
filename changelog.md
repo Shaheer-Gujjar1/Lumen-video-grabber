@@ -2,6 +2,15 @@
 
 All notable changes to the **Lumen Video Grabber** project are documented in this file.
 
+## [2.1.0] - 2026-07-24
+
+### Added
+- **On-Demand Dependency Downloader:** Implemented an automated background downloader in Rust for `yt-dlp` and `ffmpeg`. The app automatically detects missing system dependencies on boot, fetches OS-appropriate binaries directly from GitHub releases, extracts them into the local AppData directory, and executes them without requiring manual user installation.
+- **Initialization Overlay:** Added a sleek, animated initialization splash screen during boot while dependencies are scanned and downloaded.
+
+### Changed
+- **Local Binary Path Resolution:** Updated `fetch_video_info` and `download_video` execution commands to dynamically resolve and prefer locally stored binaries in AppData over system binaries.
+
 ## [2.0.5] - 2026-07-18
 
 ### Added
