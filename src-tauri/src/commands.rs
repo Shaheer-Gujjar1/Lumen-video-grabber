@@ -1,9 +1,11 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use serde::{Serialize, Deserialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::fs::{File, create_dir_all};
+use std::io::{Write, Read};
 
 lazy_static::lazy_static! {
     static ref ABORT_FLAGS: Arc<Mutex<HashMap<String, bool>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -36,36 +38,163 @@ pub struct ProgressPayload {
     pub total_size: Option<String>,
 }
 
-#[tauri::command]
-pub fn check_dependencies() -> HashMap<String, bool> {
-    let mut status = HashMap::new();
-    
-    // Check FFmpeg
-    let ffmpeg_ok = Command::new("ffmpeg")
-        .arg("-version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-        
-    // Check yt-dlp
-    let ytdlp_ok = Command::new("yt-dlp")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
+// Get the local app data path for dependencies
+fn get_bin_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut path = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    path.push("bin");
+    if !path.exists() {
+        create_dir_all(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(path)
+}
 
-    status.insert("ffmpeg".to_string(), ffmpeg_ok);
-    status.insert("ytdlp".to_string(), ytdlp_ok);
+// Get correct executable file name/path
+fn get_exe_path(app: &AppHandle, name: &str) -> PathBuf {
+    let mut dir = get_bin_dir(app).unwrap_or_else(|_| PathBuf::from("."));
+    #[cfg(target_os = "windows")]
+    let filename = format!("{}.exe", name);
+    #[cfg(not(target_os = "windows"))]
+    let filename = name.to_string();
+    
+    dir.push(filename);
+    dir
+}
+
+// Check if command is available globally or locally
+fn find_command_path(app: &AppHandle, name: &str) -> Option<PathBuf> {
+    // Check locally first
+    let local_path = get_exe_path(app, name);
+    if local_path.exists() {
+        return Some(local_path);
+    }
+    
+    // Check globally
+    let check_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    if let Ok(output) = Command::new(check_cmd).arg(name).output() {
+        if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path_str.is_empty() {
+                return Some(PathBuf::from(path_str));
+            }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub fn check_dependencies(app: AppHandle) -> HashMap<String, bool> {
+    let mut status = HashMap::new();
+    status.insert("ffmpeg".to_string(), find_command_path(&app, "ffmpeg").is_some());
+    status.insert("ytdlp".to_string(), find_command_path(&app, "yt-dlp").is_some());
     status
 }
 
 #[tauri::command]
-pub async fn fetch_video_info(url: String) -> Result<VideoInfo, String> {
-    let output = Command::new("yt-dlp")
+pub async fn download_dependencies(app: AppHandle) -> Result<(), String> {
+    let bin_dir = get_bin_dir(&app)?;
+    
+    // Download yt-dlp
+    if find_command_path(&app, "yt-dlp").is_none() {
+        let yt_url = if cfg!(target_os = "windows") {
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+        } else if cfg!(target_os = "macos") {
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
+        } else {
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
+        };
+        
+        let target_path = get_exe_path(&app, "yt-dlp");
+        let response = reqwest::get(yt_url).await.map_err(|e| e.to_string())?;
+        let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+        
+        let mut file = File::create(&target_path).map_err(|e| e.to_string())?;
+        file.write_all(&bytes).map_err(|e| e.to_string())?;
+        
+        #[cfg(not(target_os = "windows"))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&target_path, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Download FFmpeg
+    if find_command_path(&app, "ffmpeg").is_none() {
+        let ffmpeg_url = if cfg!(target_os = "windows") {
+            "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip"
+        } else if cfg!(target_os = "macos") {
+            "https://evermeet.cx/ffmpeg/getrelease/zip"
+        } else {
+            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+        };
+        
+        let response = reqwest::get(ffmpeg_url).await.map_err(|e| e.to_string())?;
+        let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+        
+        // Write archive temporarily
+        let archive_path = bin_dir.join("ffmpeg_archive");
+        let mut file = File::create(&archive_path).map_err(|e| e.to_string())?;
+        file.write_all(&bytes).map_err(|e| e.to_string())?;
+        
+        if ffmpeg_url.ends_with(".zip") || cfg!(target_os = "macos") {
+            // Extract zip
+            let zip_file = File::open(&archive_path).map_err(|e| e.to_string())?;
+            let mut archive = zip::ZipArchive::new(zip_file).map_err(|e| e.to_string())?;
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+                let file_name = file.name().to_string();
+                if file_name.ends_with("ffmpeg") || file_name.ends_with("ffmpeg.exe") {
+                    let target_path = get_exe_path(&app, "ffmpeg");
+                    let mut out_file = File::create(&target_path).map_err(|e| e.to_string())?;
+                    let mut buffer = Vec::new();
+                    file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
+                    out_file.write_all(&buffer).map_err(|e| e.to_string())?;
+                    
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        std::fs::set_permissions(&target_path, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+                    }
+                    break;
+                }
+            }
+        } else {
+            // Extract tar.xz (Linux)
+            let tar_xz_file = File::open(&archive_path).map_err(|e| e.to_string())?;
+            let decompressed = flate2::read::GzDecoder::new(tar_xz_file);
+            let mut archive = tar::Archive::new(decompressed);
+            if let Ok(entries) = archive.entries() {
+                for entry in entries.flatten() {
+                    if let Ok(path) = entry.path() {
+                        let path_str = path.to_string_lossy();
+                        if path_str.ends_with("ffmpeg") {
+                            let target_path = get_exe_path(&app, "ffmpeg");
+                            let mut out_file = File::create(&target_path).map_err(|e| e.to_string())?;
+                            let mut buffer = Vec::new();
+                            let mut entry_mut = entry;
+                            entry_mut.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
+                            out_file.write_all(&buffer).map_err(|e| e.to_string())?;
+                            
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::set_permissions(&target_path, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        let _ = std::fs::remove_file(archive_path);
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, String> {
+    let ytdlp_bin = find_command_path(&app, "yt-dlp")
+        .ok_or_else(|| "yt-dlp executable not found".to_string())?;
+
+    let output = Command::new(ytdlp_bin)
         .args(["--dump-json", "--no-playlist", "--quiet", &url])
         .output()
         .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
@@ -287,9 +416,23 @@ pub async fn download_video(
         format!("{}/%(title)s.%(ext)s", download_path)
     };
 
+    let ytdlp_bin = find_command_path(&app, "yt-dlp")
+        .ok_or_else(|| "yt-dlp executable not found".to_string())?;
+        
+    let ffmpeg_bin = find_command_path(&app, "ffmpeg");
+
     // We'll spawn yt-dlp in a background thread and parse its output.
     tokio::task::spawn_blocking(move || {
-        let mut cmd = Command::new("yt-dlp");
+        let mut cmd = Command::new(ytdlp_bin);
+        
+        // Add ffmpeg location to yt-dlp path if we have it locally
+        if let Some(ref ffmpeg_path) = ffmpeg_bin {
+            if let Some(parent) = ffmpeg_path.parent() {
+                // Prepend or add custom path
+                cmd.args(["--ffmpeg-location", &parent.to_string_lossy()]);
+            }
+        }
+
         cmd.args([
             "--newline",
             "--progress",

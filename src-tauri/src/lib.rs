@@ -12,7 +12,8 @@ pub fn run() {
             commands::download_video,
             commands::pause_download,
             commands::open_file_location,
-            commands::check_file_exists
+            commands::check_file_exists,
+            commands::download_dependencies
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

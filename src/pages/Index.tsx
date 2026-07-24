@@ -93,6 +93,9 @@ const Index = () => {
   const [recentSearches, setRecentSearches] = useState<RecentSearchItem[]>([]);
   const [showRecent, setShowRecent] = useState(false);
 
+  const [checkingDependencies, setCheckingDependencies] = useState(true);
+  const [dependencyStatus, setDependencyStatus] = useState("Checking dependencies...");
+
   // Custom Modal States
   const [duplicateModal, setDuplicateModal] = useState({ open: false });
   const [deleteModal, setDeleteModal] = useState({ open: false, id: '', path: '' });
@@ -173,19 +176,19 @@ const Index = () => {
     // Check system dependencies on boot
     const verifyDeps = async () => {
       try {
+        setDependencyStatus("Scanning for yt-dlp & FFmpeg...");
         const status = await invoke<Record<string, boolean>>("check_dependencies");
-        if (!status.ffmpeg) {
-          toast.warning("FFmpeg is missing!", {
-            description: "FFmpeg is required to combine video and audio streams."
-          });
+        if (!status.ffmpeg || !status.ytdlp) {
+          setDependencyStatus("Downloading required media encoders (yt-dlp/ffmpeg)...");
+          await invoke("download_dependencies");
+          toast.success("Dependencies initialized!");
         }
-        if (!status.ytdlp) {
-          toast.error("yt-dlp is missing!", {
-            description: "Please install yt-dlp to allow media acquisition."
-          });
-        }
+        setCheckingDependencies(false);
       } catch (e) {
         console.error("Dependency check failed:", e);
+        toast.error("Failed to initialize tools. Please check connection.");
+        // Continue but alert
+        setCheckingDependencies(false);
       }
     };
 
@@ -456,6 +459,32 @@ const Index = () => {
     setMode(m);
     setQuality(m === "audio" ? "320" : "1080");
   };
+
+  if (checkingDependencies) {
+    return (
+      <div className="min-h-screen bg-[#020205] text-foreground flex flex-col items-center justify-center relative overflow-hidden">
+        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+          <div 
+            className="absolute top-[-30%] left-[-20%] w-[100vw] h-[100vh] rounded-full blur-[120px]"
+            style={{ background: 'radial-gradient(circle, hsla(210, 95%, 60%, 0.3) 0%, transparent 80%)' }}
+          />
+          <div 
+            className="absolute bottom-[-20%] right-[-20%] w-[110vw] h-[110vh] rounded-full blur-[140px]"
+            style={{ background: 'radial-gradient(circle, hsla(220, 95%, 50%, 0.25) 0%, transparent 80%)' }}
+          />
+        </div>
+        
+        <div className="z-10 flex flex-col items-center gap-6 max-w-md text-center px-6">
+          <img src="Lumen-Lab-Logo-BG-Removed.png" alt="Lumen Lab Logo" className="h-16 object-contain animate-pulse mb-2" />
+          <Loader2 className="w-10 h-10 text-primary animate-spin" />
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold font-display tracking-tight text-white">Initializing Engine</h2>
+            <p className="text-sm text-white/60 leading-relaxed font-mono">{dependencyStatus}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#020205] text-foreground font-body pb-20 overflow-x-hidden relative">
